@@ -7,6 +7,7 @@ import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
 from missions._common import load_csv, num
 from finops import pricing
+from missions.extensions import reasoning_budget
 
 # $/1M tokens (input, output) — illustrative 2026.
 MODEL_PRICES = {"small": (0.20, 0.40), "large": (3.00, 15.00)}
@@ -31,6 +32,7 @@ def run(verbose: bool = True) -> dict:
     base_pm = pricing.dollars_per_million(base_cost, total_tokens)
     opt_pm = pricing.dollars_per_million(opt_cost, total_tokens)
     savings_pct = (1 - opt_cost / base_cost) * 100 if base_cost else 0.0
+    reasoning = reasoning_budget(rows)
 
     if verbose:
         print("== M2 Inference Cost Levers ==")
@@ -39,11 +41,15 @@ def run(verbose: bool = True) -> dict:
         print(f"optimized : ${opt_cost:,.2f}/day   ${opt_pm:.3f}/1M-token")
         print(f"savings   : {savings_pct:.1f}%  (cascade + caching + batch)")
         print(f"discount stack (batch + 100% cache): {pricing.discount_stack(batch=True, cache_hit_frac=1.0):.3f} of naive")
+        print(f"reasoning : {reasoning['reasoning_requests']}/{reasoning['total_requests']} requests "
+              f"({reasoning['reasoning_share_pct']:.1f}%), {reasoning['reasoning_tokens']:,} tokens, "
+              f"${reasoning['reasoning_cost_daily']:.2f}/day, {reasoning['reasoning_wh_daily']:,.1f} Wh/day")
 
     return {
         "baseline_daily": round(base_cost, 2), "optimized_daily": round(opt_cost, 2),
         "baseline_per_m": round(base_pm, 3), "optimized_per_m": round(opt_pm, 3),
         "savings_pct": round(savings_pct, 1), "total_tokens": total_tokens,
+        "reasoning": reasoning,
     }
 
 

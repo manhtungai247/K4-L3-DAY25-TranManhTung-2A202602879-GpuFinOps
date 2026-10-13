@@ -8,6 +8,7 @@ _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)
 from collections import defaultdict
 from missions._common import load_csv, num, catalog_by_type
 from finops import metrics
+from missions.extensions import right_sizing
 
 
 def run(verbose: bool = True) -> dict:
@@ -46,6 +47,8 @@ def run(verbose: bool = True) -> dict:
         on_demand = num(catalog_by_type()[s["gpu_type"]]["on_demand_hr"])
         idle_waste += metrics.idle_waste_usd(s["idle_hours"], on_demand)
 
+    rightsizing = right_sizing(tel, cat)
+
     if verbose:
         print("== M1 Efficiency Audit ==")
         print(f"{'GPU':14}{'type':7}{'util%':>7}{'MFU':>7}{'MBU':>7}{'idle_h':>8}")
@@ -53,8 +56,15 @@ def run(verbose: bool = True) -> dict:
             print(f"{s['gpu_id']:14}{s['gpu_type']:7}{s['gpu_util_pct']:>7}{s['mfu']:>7}{s['mbu']:>7}{s['idle_hours']:>8}")
         print(f"\nGPU-Util LIES (util>=90% but MFU<30%): {[l['gpu_id'] for l in lies]}")
         print(f"Idle waste (1 day): ${idle_waste:,.2f}  ->  ${idle_waste*30:,.0f}/month")
+        print("\nMBU-aware right-sizing (10% HBM/BW headroom):")
+        for row in rightsizing:
+            print(f"{row['gpu_id']}: {row['current_gpu']} -> {row['recommended_gpu']} | "
+                  f"MFU={row['mean_mfu']:.3f} MBU={row['mean_mbu']:.3f} | "
+                  f"${row['current_usd_per_gb']:.4f} -> ${row['recommended_usd_per_gb']:.4f}/GB-hr | "
+                  f"save ${row['monthly_savings_usd']:,.2f}/month")
 
-    return {"summary": summary, "lies": lies, "idle_waste_daily": round(idle_waste, 2)}
+    return {"summary": summary, "lies": lies, "idle_waste_daily": round(idle_waste, 2),
+            "right_sizing": rightsizing}
 
 
 if __name__ == "__main__":
