@@ -1,31 +1,32 @@
-# NimbusAI GPU FinOps — bài viết nộp bài
+# NimbusAI: kết quả tối ưu chi phí GPU
 
-## Kết quả trước và sau
+## Chi phí trước và sau tối ưu
 
-Trên bộ dữ liệu tổng hợp cố định của lab, baseline là **$27,133/tháng**; cấu hình optimized còn **$14,626/tháng**, tiết kiệm **$12,507 (46.1%)**. Tổng hợp dùng 30 ngày: inference baseline cộng purchasing on-demand; optimized trừ bốn khoản trong waterfall. Riêng inference xử lý 225,990,810 token/tháng: đơn giá giảm từ **$6.488 xuống $1.126/1M-token** (82.6%).
+Trong bộ dữ liệu của bài lab, NimbusAI đang tốn khoảng **$27,133 mỗi tháng**. Sau khi áp dụng các phương án tối ưu, chi phí ước tính còn **$14,626**, tức giảm **$12,507 (46.1%)**. Đây là mô hình tính theo 30 ngày, cộng chi phí inference với chi phí GPU on-demand rồi trừ các khoản tiết kiệm trong bảng dưới; con số này giúp so sánh các phương án chứ không phải hóa đơn production.
 
-| Đòn bẩy | Tiết kiệm/tháng |
+| Đòn bẩy | Tiết kiệm ước tính mỗi tháng |
 |---|---:|
-| Inference (cascade/cache/batch) | $1,212 |
-| Purchasing (spot/reserved) | $10,040 |
-| Right-size util-lies | $655 |
-| Kill idle GPUs | $600 |
+| Inference: cascade, cache và batch | $1,212 |
+| Chọn hình thức thuê GPU: spot và reserved | $10,040 |
+| Right-sizing các GPU bị util-lie | $655 |
+| Tắt GPU chạy idle | $600 |
 
-Đòn bẩy lớn nhất trong mô hình là **Purchasing (spot/reserved)** ($10,040/tháng); purchasing có tác động lớn vì tối ưu hóa được nhiều GPU-hours trong workload. Inference vẫn đạt mức giảm đơn giá cao nhờ cascade, cache và batch. Right-sizing và dừng idle xử lý lãng phí capacity. Waterfall làm tròn USD, còn số liệu M2 giữ độ chính xác đến cent.
+Khoản tiết kiệm lớn nhất đến từ cách mua GPU: **$10,040/tháng** trong mô hình này. Tuy vậy, với mỗi triệu token, chi phí inference cũng giảm đáng kể: từ **$6.488** xuống **$1.126**, tương đương **82.6%**. Cascade chuyển request phù hợp sang model nhỏ; cache giảm giá phần input đã lưu và batch giảm giá request có thể xử lý theo lô. Ba cách này giúp phục vụ cùng lượng token với chi phí thấp hơn.
 
-## GPU-Util lie và phần mở rộng
+## GPU-Util cao chưa chắc làm được nhiều việc
 
-- gpu-h100-4 (H100) có GPU-Util 98.2% nhưng MFU 0.194. GPU bận có thể chờ dữ liệu, memory hoặc kernel; hóa đơn vẫn tính đủ giờ trong khi FLOPs hữu ích thấp. Cần profile nguyên nhân trước khi giảm tier.
-- gpu-a10g-1 (A10G) có GPU-Util 96.9% nhưng MFU 0.268. GPU bận có thể chờ dữ liệu, memory hoặc kernel; hóa đơn vẫn tính đủ giờ trong khi FLOPs hữu ích thấp. Cần profile nguyên nhân trước khi giảm tier.
+Hai GPU bị đánh dấu là `gpu-h100-4` và `gpu-a10g-1`. H100 báo GPU-Util **98.2%** nhưng MFU chỉ **0.194**; A10G báo **96.9%** nhưng MFU là **0.268**. GPU-Util cho biết thiết bị bận bao nhiêu thời gian, còn MFU phản ánh mức sử dụng năng lực tính toán. Vì vậy, một GPU bận gần như liên tục vẫn có thể tạo ra ít FLOPs hữu ích hơn kỳ vọng, trong khi chi phí thuê vẫn tính đủ giờ. Chờ dữ liệu, nghẽn bộ nhớ hoặc overhead khi khởi chạy kernel đều có thể là nguyên nhân; cần profile workload để xác định trước khi đổi GPU.
 
-**Extension 1 — Right-sizing theo MBU:** 2 cơ hội thỏa mức dự phòng 10% HBM và bandwidth. A10G→L4 (gpu-a10g-0), A10G→L4 (gpu-a10g-1); gross $288.00/GPU-month, trong đó $144.00 đã nằm trong util-lie lever, nên incremental là $144.00/GPU-month. Chỉ chọn theo giá/GB là không đủ: cần giữ capacity bộ nhớ và thông lượng cho workload.
+## Hai phần mở rộng
 
-**Extension 2 — Ngân sách reasoning:** 201/2,400 request (8.4%) tạo 1,241,156 token; chi phí đã tối ưu $1.40/ngày và điện ước tính 29,787.7 Wh/ngày theo giả định 80×. Tỷ lệ request nhỏ vẫn có thể chiếm phần lớn điện; áp dụng giới hạn theo use case và đo lại chất lượng trước khi đổi route.
+**Right-sizing theo MBU.** Mình so sánh GPU inference với lựa chọn rẻ hơn, đồng thời yêu cầu GPU thay thế đủ HBM và bandwidth cho mức sử dụng quan sát được, cộng thêm 10% dự phòng. Có hai cơ hội đổi **A10G sang L4**, tiết kiệm gộp **$288/GPU-tháng**. Trong đó, $144 đã được tính ở khoản right-sizing GPU bị util-lie, nên phần tiết kiệm tăng thêm là **$144/GPU-tháng**. Bài học ở đây là không nên chọn GPU chỉ vì giá mỗi giờ thấp hơn: nếu thiếu bộ nhớ hoặc băng thông, workload có thể không chạy được hoặc hiệu năng giảm.
 
-## Khuyến nghị cho NimbusAI
+**Ngân sách reasoning.** Chỉ **201 trên 2,400 request (8.4%)** được gắn cờ reasoning, với tổng cộng **1,241,156 token**. Theo giả định của lab, nhóm request này tốn khoảng **$1.40/ngày** và dùng **29,787.7 Wh/ngày**. Mức điện cao là ước tính từ hệ số reasoning 80×, không phải số đo thực tế. Kết quả gợi ý nên theo dõi riêng loại request này và chỉ bật reasoning khi tác vụ cần suy luận nhiều bước; sau đó cần kiểm tra lại chất lượng để tránh tiết kiệm chi phí nhưng làm câu trả lời kém đi.
 
-1. Bật routing theo độ khó có kiểm soát, theo dõi quality/latency và đơn giá $/1M-token.
-2. Bật cache và batch cho traffic phù hợp; kiểm tra cache-hit và yêu cầu độ trễ.
-3. Tắt GPU idle, đưa job interruptible sang spot, và chỉ cam kết reserved khi duty cycle vượt điểm hòa vốn. Chuẩn hóa team/project tags trước chargeback; dataset hiện đạt gate.
+## Nếu phụ trách FinOps ở NimbusAI
 
-Điện và phát thải được ước lượng bằng mô hình lab: 0.24 Wh/query, 0.091 gCO₂e/query tại us-east-1; vùng sạch nhất trong bảng là europe-north1. Đây là mô phỏng, không phải hóa đơn production; xác minh price, latency, SLO và hệ số phát thải trước triển khai.
+1. Rà soát lịch chạy và duty cycle để chuyển job phù hợp sang spot, đồng thời chỉ mua reserved khi mức sử dụng đủ cao để vượt điểm hòa vốn.
+2. Triển khai cascade, cache và batch theo từng nhóm request; theo dõi đồng thời `$/1M-token`, latency và chất lượng để chắc chắn mức giảm giá không làm hỏng trải nghiệm.
+3. Tắt GPU idle, kiểm tra các trường hợp util-lie bằng profiler, rồi right-size sau khi xác nhận yêu cầu bộ nhớ và bandwidth. Tag coverage hiện đạt **92%**, cao hơn ngưỡng 80% của lab, nên có thể chuẩn bị showback/chargeback sau khi rà soát các tag còn thiếu.
+
+Về năng lượng, mô hình lab ước tính một query dùng **0.24 Wh** và phát thải **0.091 gCO₂e** tại `us-east-1`. Trong các vùng có dữ liệu, `europe-north1` có cường độ carbon thấp nhất. Trước khi áp dụng các con số này vào quyết định production, NimbusAI cần cập nhật giá, kiểm tra độ trễ và SLO theo vùng, và thay các hệ số mô phỏng bằng dữ liệu đo thực tế.
